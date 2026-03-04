@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="vi">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>PCCC ERP PRO - Dashboard</title>
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800&display=swap" rel="stylesheet">
+
+  <!-- 1. MODULAR STYLES -->
+  <?!= include('UI_Styles'); ?>
+</head>
+
+<body>
+  <div class="blob"></div>
+  <div class="blob blob-2"></div>
+
+  <!-- Zalo Simulator -->
+  <div id="zalo-simulator">
+    <div class="zalo-icon"><img src="https://upload.wikimedia.org/wikipedia/commons/9/91/Icon_of_Zalo.svg" width="30">
+    </div>
+    <div class="zalo-content">
+      <div id="zalo-title">Hệ Thống PCCC</div>
+      <div id="zalo-body">Thông báo mới...</div>
+    </div>
+  </div>
+
+  <div id="toast-container"></div>
+  <div id="printArea"></div>
+  <div id="mobile-overlay" onclick="toggleSidebar()"></div>
+
+  <!-- MODALS -->
+  <?!= include('UI_Modals'); ?>
+
+  <!-- SIDEBAR -->
+  <div class="sidebar" id="sidebar">
+    <h2><i data-lucide="shield-check"></i> <span class="hide-text">PCCC ERP V2.0</span></h2>
+    <div class="sidebar-item active" onclick="switchTab('dashboard', this)"><i data-lucide="layout-dashboard"></i> <span
+        class="hide-text">Tổng quan</span></div>
+    <div class="sidebar-item" onclick="switchTab('locations', this)"><i data-lucide="map-pin"></i> <span
+        class="hide-text">Vị trí & QR Code</span></div>
+    <div class="sidebar-item" onclick="switchTab('logs', this)"><i data-lucide="clipboard-list"></i> <span
+        class="hide-text">Nhật ký</span></div>
+    <div class="sidebar-item" onclick="switchTab('settings', this)"><i data-lucide="settings"></i> <span
+        class="hide-text">Cài đặt</span></div>
+    <hr style="border-color: #334155; margin: 20px 0;">
+    <a href="scan.html" target="_blank" class="sidebar-item" style="text-decoration: none;"><i
+        data-lucide="smartphone"></i> <span class="hide-text">App Quét Mã</span></a>
+    <div style="position: absolute; bottom: 20px; width: calc(100% - 40px);">
+      <button class="btn btn-danger" style="width: 100%; justify-content:center;" onclick="appLogout()"><i
+          data-lucide="log-out"></i> <span class="hide-text">Đăng xuất</span></button>
+    </div>
+  </div>
+
+  <!-- MAIN CONTENT -->
+  <div class="main-content" id="mainContent">
+    <div class="header-top">
+      <div>
+        <h1 id="pageTitle" style="margin:0; font-weight: 800; font-size: 24px; letter-spacing: -0.02em;">Tổng Quan
+          Dashboard</h1>
+        <p id="userName" style="margin: 5px 0 0 0; color: var(--text-muted); font-weight: 600;"></p>
+        <p id="userRole"
+          style="margin: 2px 0 0 0; font-size: 11px; color: var(--primary); text-transform: uppercase; font-weight: 800; letter-spacing: 0.05em;">
+        </p>
+      </div>
+      <div style="display:flex; gap:10px;">
+        <button class="btn btn-primary" onclick="window.location.reload()"><i data-lucide="refresh-cw"></i> Làm
+          mới</button>
+        <button class="menu-btn" style="display:none;" onclick="toggleSidebar()"><i data-lucide="menu"></i></button>
+      </div>
+    </div>
+
+    <!-- 2. VIEWS (Dashboard, Locations, Logs, Settings) -->
+    <?!= include('UI_Views'); ?>
+  </div>
+
+  <!-- 3. MODULAR SCRIPTS -->
+  <?!= include('UI_Scripts'); ?>
+</body>
+
+</html>

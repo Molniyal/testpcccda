@@ -1,0 +1,144 @@
+<!-- 1. DASHBOARD VIEW -->
+<div id="view-dashboard" class="view-section active">
+    <div class="filter-bar">
+        <i data-lucide="filter" style="color:var(--primary);"></i>
+        <select id="dashYear" onchange="renderDashboard()"></select>
+        <select id="dashMonth" onchange="renderDashboard()"></select>
+        <button class="btn btn-primary" onclick="clearDashFilter()"><i data-lucide="x-circle"></i> Xóa lọc</button>
+    </div>
+
+    <div class="stats-grid" id="stats-summary">
+        <div class="stat-card">
+            <div class="stat-label"><i data-lucide="database"></i> Tổng thiết bị</div>
+            <div class="stat-value" id="st-total">0</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-label"><i data-lucide="check-circle" style="color:var(--success);"></i> Đã kiểm tra</div>
+            <div class="stat-value" id="st-inspected">0</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-label"><i data-lucide="alert-triangle" style="color:var(--danger);"></i> Phát hiện lỗi
+            </div>
+            <div class="stat-value" id="st-errors" style="color:var(--danger);">0</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-label"><i data-lucide="qr-code"></i> Mã QR hỏng</div>
+            <div class="stat-value" id="st-brokenQR">0</div>
+        </div>
+    </div>
+
+    <div style="display:grid; grid-template-columns: 2fr 1fr; gap:30px; margin-top:30px;">
+        <div class="content-card">
+            <h3 style="margin-top:0;"><i data-lucide="bar-chart-3" style="color:var(--primary);"></i> Tỷ lệ hoàn thành
+                theo Xưởng (%)</h3>
+            <div style="height:350px;"><canvas id="progressChart"></canvas></div>
+        </div>
+        <div class="content-card">
+            <h3 style="margin-top:0;"><i data-lucide="bell" style="color:var(--danger);"></i> Cảnh báo bảo trì</h3>
+            <div id="maintenance-alert-list" style="max-height:350px; overflow-y:auto;"></div>
+        </div>
+    </div>
+</div>
+
+<!-- 2. LOCATIONS VIEW -->
+<div id="view-locations" class="view-section">
+    <div class="filter-bar">
+        <input type="text" id="locSearch" placeholder="Tìm mã thiết bị..." oninput="renderLocations()">
+        <select id="locXuong" onchange="renderLocations()"></select>
+        <div style="flex:1"></div>
+        <button class="btn btn-success" onclick="openAddLoc()"><i data-lucide="plus-circle"></i> Thêm mới</button>
+        <button class="btn btn-primary" onclick="printSelected()"><i data-lucide="printer"></i> In Tem Đã Chọn</button>
+        <button class="btn btn-primary" style="background:var(--secondary);" onclick="printAll()"><i
+                data-lucide="printer"></i> In Tất Cả</button>
+    </div>
+    <div class="table-responsive">
+        <table>
+            <thead>
+                <tr>
+                    <th style="width:40px;"><input type="checkbox"
+                            onclick="document.querySelectorAll('.qr-select').forEach(c=>c.checked=this.checked)"></th>
+                    <th>Mã QR</th>
+                    <th>Mã Thiết Bị</th>
+                    <th>Xưởng</th>
+                    <th>Khu Vực</th>
+                    <th>Trạng Thái</th>
+                    <th>Thao Tác</th>
+                </tr>
+            </thead>
+            <tbody id="locations-table"></tbody>
+        </table>
+    </div>
+    <!-- Pagination -->
+    <div class="pagination-controls">
+        <button id="prevLocBtn" class="page-btn" onclick="changeLocPage(-1)"><i data-lucide="chevron-left"></i>
+            Trước</button>
+        <div class="page-num">Trang <span id="currentLocPage">1</span> / <span id="totalLocPages">1</span></div>
+        <button id="nextLocBtn" class="page-btn" onclick="changeLocPage(1)">Sau <i
+                data-lucide="chevron-right"></i></button>
+    </div>
+</div>
+
+<!-- 3. LOGS VIEW -->
+<div id="view-logs" class="view-section">
+    <div class="filter-bar">
+        <input type="date" id="logDate" onchange="renderLogs()">
+        <select id="logXuong" onchange="renderLogs()"></select>
+        <select id="logStatus" onchange="renderLogs()">
+            <option value="ALL">Tất cả trạng thái</option>
+            <option value="ERRORS">Chỉ các lỗi / Hết hạn</option>
+        </select>
+        <input type="text" id="logSearch" placeholder="Tìm theo Mã TB/Tên NV..." oninput="renderLogs()">
+        <button class="btn btn-success" onclick="prepSendMail('single')"><i data-lucide="mail"></i> Gửi Mail
+            Chọn</button>
+        <button class="btn btn-primary" onclick="prepSendMail('mass')"><i data-lucide="mail"></i> Gửi Mail Bảng</button>
+    </div>
+    <div class="table-responsive">
+        <table>
+            <thead>
+                <tr>
+                    <th style="width:40px;"><input type="checkbox"
+                            onclick="document.querySelectorAll('.log-select').forEach(c=>c.checked=this.checked)"></th>
+                    <th>Thời gian</th>
+                    <th>Xưởng</th>
+                    <th>Mã TB</th>
+                    <th>Người KT</th>
+                    <th>Kết quả</th>
+                    <th>Ghi chú</th>
+                    <th>Ảnh</th>
+                    <th>Thao tác</th>
+                </tr>
+            </thead>
+            <tbody id="logs-table"></tbody>
+        </table>
+    </div>
+    <!-- Pagination -->
+    <div class="pagination-controls">
+        <button id="prevLogBtn" class="page-btn" onclick="changeLogPage(-1)"><i data-lucide="chevron-left"></i>
+            Trước</button>
+        <div class="page-num">Trang <span id="currentLogPage">1</span> / <span id="totalLogPages">1</span></div>
+        <button id="nextLogPage" class="page-btn" onclick="changeLogPage(1)">Sau <i
+                data-lucide="chevron-right"></i></button>
+    </div>
+</div>
+
+<!-- 4. SETTINGS VIEW -->
+<div id="view-settings" class="view-section">
+    <div class="content-card">
+        <h3 style="color:var(--primary); margin-top:0;"><i data-lucide="webhook"></i> Cấu hình thông báo tức thời</h3>
+        <div style="display:grid; grid-template-columns: 1fr 1fr; gap:15px;">
+            <div><label>Zalo Webhook:</label><input type="text" id="zaloWebhook" class="form-input"
+                    value="DEMO_MODE_ACTIVE"></div>
+            <div><label>Telegram Bot Token:</label><input type="text" id="teleWebhook" class="form-input"
+                    placeholder="bot123456:..."></div>
+        </div>
+    </div>
+    <div class="content-card">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:15px;">
+            <h3 style="margin:0;"><i data-lucide="mail" style="color:var(--primary);"></i> Mẫu Email Báo Cáo</h3>
+            <button class="btn btn-success" onclick="addNewTemplate()"><i data-lucide="plus"></i> Thêm Mẫu</button>
+        </div>
+        <div id="template-list"></div>
+        <button class="btn btn-primary" style="width:100%; margin-top:20px; padding:15px;" onclick="saveTemplates()">LƯU
+            TẤT CẢ CÀI ĐẶT</button>
+    </div>
+</div>

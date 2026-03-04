@@ -1,0 +1,476 @@
+<script>
+    // ==========================================
+    // 🔴 1. ĐIỀN LINK GOOGLE SCRIPT MỚI VÀO ĐÂY:
+    const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbw0I2_gFe5IyzbUeMToKWXdGCiZm04Wr0iDzyqD9Yf4CQ-jun4ZJjuFpxzSrBh1TKrqaA/exec";
+    // 🔴 2. ĐIỀN TÊN MIỀN GITHUB PAGES VÀO ĐÂY:
+    const DOMAIN = "https://molniyal.github.io/quan-ly-pccc";
+    // ==========================================
+
+    let globalData = { locations: [], logs: [], templates: [] };
+    let currentFilteredLogs = [];
+    let currentFilteredLocs = [];
+    let myChart = null;
+
+    // PAGINATION STATE
+    let pageLoc = 1; const rowsLoc = 30;
+    let pageLog = 1; const rowsLog = 30;
+
+    // ================= UI HELPERS =================
+    function showToast(msg, type = 'success') {
+        const container = document.getElementById('toast-container');
+        const toast = document.createElement('div'); toast.className = `toast ${type}`;
+        let icon = type === 'success' ? 'check-circle' : (type === 'error' ? 'x-circle' : 'alert-circle');
+        toast.innerHTML = `<i data-lucide="${icon}"></i> <span>${msg}</span>`;
+        container.appendChild(toast); lucide.createIcons();
+        setTimeout(() => { toast.style.opacity = '0'; setTimeout(() => toast.remove(), 300); }, 3000);
+    }
+
+    let dialogCallback = null;
+    function showDialog(title, message, callback) {
+        document.getElementById('dialogTitle').innerText = title;
+        document.getElementById('dialogMessage').innerText = message;
+        dialogCallback = callback;
+        document.getElementById('customDialog').style.display = 'flex';
+    }
+    document.getElementById('dialogBtnOk').addEventListener('click', () => { closeDialog(); if (dialogCallback) dialogCallback(true); });
+    function closeDialog() { document.getElementById('customDialog').style.display = 'none'; }
+
+    // ================= KHỞI TẠO =================
+    window.onload = () => {
+        lucide.createIcons();
+        initDateFilters();
+        const savedUser = JSON.parse(localStorage.getItem('pccc_session'));
+        if (savedUser) {
+            document.getElementById('loginModal').style.display = 'none';
+            document.getElementById('maNvLogin').value = savedUser.ma;
+            document.getElementById('passLogin').value = savedUser.pass;
+            fetchData(savedUser.ma, savedUser.pass);
+        }
+    };
+
+    function toggleSidebar() {
+        const sidebar = document.getElementById('sidebar');
+        const content = document.getElementById('mainContent');
+        if (window.innerWidth <= 768) {
+            sidebar.classList.toggle('mobile-open');
+            document.getElementById('mobile-overlay').style.display = sidebar.classList.contains('mobile-open') ? 'block' : 'none';
+        } else {
+            sidebar.classList.toggle('collapsed');
+            content.classList.toggle('expanded');
+        }
+    }
+
+    function initDateFilters() {
+        let yHtml = '<option value="ALL">Tất cả Năm</option>';
+        const cy = new Date().getFullYear();
+        for (let i = cy - 1; i <= cy + 1; i++) yHtml += `<option value="${i}" ${i === cy ? 'selected' : ''}>Năm ${i}</option>`;
+        document.getElementById('dashYear').innerHTML = yHtml;
+
+        let mHtml = '<option value="ALL">Tất cả Tháng</option>';
+        const cm = new Date().getMonth() + 1;
+        for (let i = 1; i <= 12; i++) mHtml += `<option value="${i}" ${i === cm ? 'selected' : ''}>Tháng ${i}</option>`;
+        document.getElementById('dashMonth').innerHTML = mHtml;
+    }
+
+    document.getElementById('loginForm').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const btn = e.target.querySelector('button'); btn.innerText = "Đang xác thực...";
+        await fetchData(document.getElementById('maNvLogin').value.trim(), document.getElementById('passLogin').value.trim());
+        btn.innerText = "Đăng Nhập";
+    });
+
+    function appLogout() { showDialog("Xác nhận", "Bạn có chắc muốn đăng xuất?", (res) => { if (res) { localStorage.removeItem('pccc_session'); window.location.reload(); } }); }
+
+    function switchTab(tabId, element) {
+        document.querySelectorAll('.view-section').forEach(el => el.classList.remove('active'));
+        document.querySelectorAll('.sidebar-item').forEach(el => el.classList.remove('active'));
+        document.getElementById(`view-${tabId}`).classList.add('active');
+        if (element) element.classList.add('active');
+        const t = { 'dashboard': 'Tổng Quan', 'locations': 'Quản Lý Vị Trí', 'logs': 'Nhật Ký & Báo Cáo', 'settings': 'Quản lý Mẫu Email' };
+        document.getElementById('pageTitle').innerText = t[tabId];
+        if (window.innerWidth <= 768) toggleSidebar();
+    }
+
+    async function fetchData(maNv, pass) {
+        try {
+            const res = await fetch(`${SCRIPT_URL}?action=getDashboardData&maNV=${maNv}&matKhau=${pass}`);
+            const data = await res.json();
+            if (data.status === "error") { showToast(data.message, 'error'); return; }
+
+            localStorage.setItem('pccc_session', JSON.stringify({ ma: maNv, pass: pass }));
+            document.getElementById('loginModal').style.display = 'none';
+            document.getElementById('userName').innerText = "Xin chào, " + data.name;
+            document.getElementById('userRole').innerText = data.role === "ADMIN" ? "Quản Trị Viên" : `Quản lý: ${data.xuong}`;
+
+            globalData = data;
+            populateDropdowns(); renderDashboard(); renderLocations(); renderLogs(); renderTemplates();
+            showToast("Tải dữ liệu thành công!", "success");
+        } catch (err) { showToast("Lỗi kết nối mạng!", 'error'); }
+    }
+
+    function populateDropdowns() {
+        const xuongs = [...new Set(globalData.locations.map(l => l.xuong))].sort();
+        let html = '<option value="ALL">Tất cả Xưởng</option>';
+        xuongs.forEach(x => html += `<option value="${x}">${x}</option>`);
+        document.getElementById('locXuong').innerHTML = html; document.getElementById('logXuong').innerHTML = html;
+    }
+
+    // ================= ZALO SIMULATOR =================
+    function showZaloNotify(title, message) {
+        const sim = document.getElementById('zalo-simulator');
+        document.getElementById('zalo-title').innerText = title;
+        document.getElementById('zalo-body').innerText = message;
+        sim.classList.add('show');
+        setTimeout(() => sim.classList.remove('show'), 6000);
+    }
+
+    // ================= 1. TAB DASHBOARD (BIỂU ĐỒ TỶ LỆ) =================
+    function clearDashFilter() {
+        document.getElementById('dashYear').value = "ALL";
+        document.getElementById('dashMonth').value = "ALL";
+        renderDashboard();
+    }
+
+    function renderDashboard() {
+        const y = document.getElementById('dashYear').value;
+        const m = document.getElementById('dashMonth').value;
+
+        let filteredLogs = globalData.logs;
+        if (y !== "ALL") filteredLogs = filteredLogs.filter(l => new Date(l.thoi_gian).getFullYear() == parseInt(y));
+        if (m !== "ALL") filteredLogs = filteredLogs.filter(l => new Date(l.thoi_gian).getMonth() + 1 == parseInt(m));
+
+        const uniqueInspectedTB = [...new Set(filteredLogs.map(l => l.ma_tb))];
+        const errLogs = filteredLogs.filter(i => i.ngoai_quan === 'LỖI' || i.ap_suat === 'LỖI' || i.han_sd === 'HẾT HẠN');
+        const brokenQRs = globalData.locations.filter(l => l.qr_broken);
+
+        document.getElementById('st-total').innerText = globalData.locations.length;
+        document.getElementById('st-inspected').innerText = uniqueInspectedTB.length;
+        document.getElementById('st-errors').innerText = errLogs.length;
+        document.getElementById('st-brokenQR').innerText = brokenQRs.length;
+
+        const forecastList = document.getElementById('maintenance-alert-list');
+        const criticalTB = [...new Set(errLogs.map(l => l.ma_tb))].slice(0, 10);
+        forecastList.innerHTML = criticalTB.length ? criticalTB.map(id => {
+            const lastLog = filteredLogs.find(l => l.ma_tb === id);
+            const xuong = (globalData.locations.find(l => l.ma_tb === id) || { xuong: '?' }).xuong;
+            return `
+            <div style="padding:10px; border:1px solid #fee2e2; background:#fffcfc; border-radius:10px; margin-bottom:8px; display:flex; justify-content:space-between; align-items:center;">
+               <div><b style="font-size:14px; color:var(--primary);">${id}</b> <span style="font-size:11px; color:#64748b;">(${xuong})</span></div>
+               <span class="badge badge-err" style="font-size:9px;">LỖI / HẾT HẠN</span>
+            </div>`;
+        }).join('') : `<div style="text-align:center; padding:20px; color:#94a3b8; font-size:13px;">✅ Hệ thống an toàn</div>`;
+
+        drawPercentageChart(uniqueInspectedTB);
+
+        if (errLogs.length > 0 && !window.zaloDemoed) {
+            showZaloNotify("⚠️ CẢNH BÁO PCCC", `Phát hiện ${errLogs.length} thiết bị có lỗi trong dữ liệu vừa tải!`);
+            window.zaloDemoed = true;
+        }
+    }
+
+    function drawPercentageChart(uniqueInspectedTB) {
+        const xuongs = [...new Set(globalData.locations.map(l => l.xuong))].sort();
+        const percentages = [];
+        xuongs.forEach(x => {
+            const tbOfXuong = globalData.locations.filter(l => l.xuong === x).map(l => l.ma_tb);
+            const total = tbOfXuong.length;
+            const ins = uniqueInspectedTB.filter(tb => tbOfXuong.includes(tb)).length;
+            const percent = total > 0 ? Math.round((ins / total) * 100) : 0;
+            percentages.push(percent);
+        });
+        const ctx = document.getElementById('progressChart').getContext('2d');
+        if (myChart) myChart.destroy();
+        const grad = ctx.createLinearGradient(0, 0, 0, 400);
+        grad.addColorStop(0, '#6366f1'); grad.addColorStop(1, '#ec4899');
+        myChart = new Chart(ctx, {
+            type: 'bar', data: {
+                labels: xuongs, datasets: [
+                    {
+                        label: 'Tỷ lệ hoàn thành (%)',
+                        data: percentages,
+                        backgroundColor: grad,
+                        borderRadius: 12,
+                        barPercentage: 0.5,
+                        borderColor: 'rgba(255,255,255,0.1)',
+                        borderWidth: 1
+                    }
+                ]
+            },
+            options: {
+                responsive: true, maintainAspectRatio: false,
+                plugins: {
+                    legend: { display: false },
+                    tooltip: {
+                        backgroundColor: 'rgba(15, 23, 42, 0.9)',
+                        titleFont: { size: 14, weight: 'bold' },
+                        padding: 12,
+                        cornerRadius: 10,
+                        callbacks: { label: (ctx) => ` ${ctx.raw}% Đã kiểm tra` }
+                    }
+                },
+                scales: {
+                    y: { beginAtZero: true, max: 100, grid: { color: 'rgba(255,255,255,0.05)' }, ticks: { color: '#94a3b8' } },
+                    x: { grid: { display: false }, ticks: { color: '#94a3b8' } }
+                }
+            }
+        });
+    }
+
+    // ================= 2. TAB VỊ TRÍ & CRUD =================
+    function renderLocations() {
+        const search = document.getElementById('locSearch').value.toLowerCase();
+        const xuong = document.getElementById('locXuong').value;
+        currentFilteredLocs = globalData.locations.filter(l => (l.ma_tb.toLowerCase().includes(search)) && (xuong === 'ALL' || l.xuong === xuong));
+        const totalPages = Math.ceil(currentFilteredLocs.length / rowsLoc) || 1;
+        if (pageLoc > totalPages) pageLoc = totalPages;
+        document.getElementById('currentLocPage').innerText = pageLoc;
+        document.getElementById('totalLocPages').innerText = totalPages;
+        document.getElementById('prevLocBtn').disabled = pageLoc === 1;
+        document.getElementById('nextLocBtn').disabled = pageLoc === totalPages;
+        const start = (pageLoc - 1) * rowsLoc;
+        const paginatedLocs = currentFilteredLocs.slice(start, start + rowsLoc);
+        const isAdmin = globalData.role === "ADMIN";
+        document.getElementById('locations-table').innerHTML = paginatedLocs.map(l => {
+            const qrUrl = `https://quickchart.io/qr?size=60&text=${encodeURIComponent(DOMAIN + "/scan.html?id=" + l.ma_tb)}`;
+            const st = l.qr_broken ? `<span class="badge badge-err">Hỏng QR</span>` : `<span class="badge badge-ok">Tốt</span>`;
+            return `<tr>
+            <td><input type="checkbox" class="qr-select" value="${l.ma_tb}"></td>
+            <td><img src="${qrUrl}" style="width:45px; border:1px solid #ccc; padding:2px; border-radius:5px;"></td>
+            <td><b>${l.ma_tb}</b></td><td>${l.xuong}</td><td>${l.khu_vuc}</td><td>${st}</td>
+            <td>
+              <button class="btn btn-primary btn-icon" onclick="openEditLoc('${l.ma_tb}','${l.xuong}','${l.khu_vuc}')" title="Sửa" style="background:#2563eb;"><i data-lucide="edit"></i></button>
+              ${isAdmin ? `<button class="btn btn-danger btn-icon" onclick="deleteLoc('${l.ma_tb}')" title="Xóa Vị Trí"><i data-lucide="trash-2"></i></button>` : ''}
+            </td>
+        </tr>`;
+        }).join('');
+        lucide.createIcons();
+    }
+
+    function changeLocPage(dir) { pageLoc += dir; renderLocations(); }
+
+    function openEditLoc(ma, x, kv) {
+        document.getElementById('editLocMaTB').innerText = ma;
+        document.getElementById('editLocXuong').value = x;
+        document.getElementById('editLocKhuVuc').value = kv;
+        document.getElementById('editLocModal').style.display = 'flex';
+    }
+    async function submitEditLoc() {
+        const maNV = JSON.parse(localStorage.getItem('pccc_session')).ma;
+        const ma = document.getElementById('editLocMaTB').innerText;
+        const x = document.getElementById('editLocXuong').value;
+        const kv = document.getElementById('editLocKhuVuc').value;
+        const payload = { action: "editLocation", maTB: ma, xuong: x, khuVuc: kv, maNV: maNV };
+        document.getElementById('editLocModal').style.display = 'none';
+        showToast('Đang cập nhật...', 'warning');
+        await fetch(SCRIPT_URL, { method: 'POST', body: JSON.stringify(payload) });
+        const loc = globalData.locations.find(l => l.ma_tb === ma);
+        if (loc) { loc.xuong = x; loc.khu_vuc = kv; }
+        renderLocations(); renderDashboard();
+        showToast("Cập nhật thành công!", "success");
+    }
+    function deleteLoc(ma) {
+        if (globalData.role !== 'ADMIN') return showToast("Quyền hạn không đủ!", "error");
+        showDialog("Xóa Vị Trí", `Bạn có chắc muốn xóa thiết thiết bị ${ma}?`, async (res) => {
+            if (res) {
+                const maNV = JSON.parse(localStorage.getItem('pccc_session')).ma;
+                showToast('Đang xóa...', 'warning');
+                await fetch(SCRIPT_URL, { method: 'POST', body: JSON.stringify({ action: "deleteLocation", maTB: ma, maNV: maNV, role: globalData.role }) });
+                globalData.locations = globalData.locations.filter(l => l.ma_tb !== ma);
+                renderLocations(); renderDashboard(); showToast('Đã xóa thành công!', 'success');
+            }
+        });
+    }
+
+    function openAddLoc() { document.getElementById('addLocModal').style.display = 'flex'; }
+    async function submitAddLoc() {
+        const maNV = JSON.parse(localStorage.getItem('pccc_session')).ma;
+        const payload = {
+            action: "addLocation",
+            maTB: document.getElementById('addMaTB').value.trim(),
+            xuong: document.getElementById('addXuong').value,
+            khuVuc: document.getElementById('addKhuVuc').value,
+            email: document.getElementById('addEmail').value,
+            maNV: maNV
+        };
+        if (!payload.maTB) return showToast("Nhập mã thiết bị!", "warning");
+        document.getElementById('addLocModal').style.display = 'none';
+        showToast('Đang thêm vị trí...', 'warning');
+        await fetch(SCRIPT_URL, { method: 'POST', body: JSON.stringify(payload) });
+        showToast("Thành công! Vui lòng F5 để đồng bộ.", "success");
+    }
+
+    function printSelected() {
+        let sel = Array.from(document.querySelectorAll('.qr-select:checked')).map(cb => cb.value);
+        if (!sel.length) return showToast("Chọn ít nhất 1 vị trí!", "warning");
+        executePrint(sel);
+    }
+    function printAll() { executePrint(globalData.locations.map(l => l.ma_tb)); }
+    function executePrint(ids) {
+        const area = document.getElementById('printArea');
+        area.innerHTML = globalData.locations.filter(l => ids.includes(l.ma_tb)).map(loc => `
+            <div class="ticket">
+              <img src="https://quickchart.io/qr?size=150&text=${encodeURIComponent(DOMAIN + "/scan.html?id=" + loc.ma_tb)}">
+              <h3>${loc.ma_tb}</h3>
+              <p>${loc.xuong}</p>
+            </div>`).join('');
+        setTimeout(() => { window.print(); area.innerHTML = ''; }, 500);
+    }
+
+    // ================= 3. TAB NHẬT KÝ =================
+    window.renderLogs = function () {
+        const date = document.getElementById('logDate').value;
+        const xuong = document.getElementById('logXuong').value;
+        const status = document.getElementById('logStatus').value;
+        const search = document.getElementById('logSearch').value.toLowerCase();
+
+        currentFilteredLogs = globalData.logs.filter(log => {
+            const locInfo = globalData.locations.find(l => l.ma_tb === log.ma_tb) || { xuong: 'N/A' };
+            const logDateStr = new Date(log.thoi_gian).toISOString().split('T')[0];
+            const matchDate = !date || logDateStr === date;
+            const matchXuong = xuong === 'ALL' || locInfo.xuong === xuong;
+            const isErr = log.ngoai_quan === 'LỖI' || log.ap_suat === 'LỖI' || log.han_sd === 'HẾT HẠN';
+            const matchStatus = status === 'ALL' || (status === 'ERRORS' && isErr);
+            const matchSearch = log.ma_tb.toLowerCase().includes(search) || (log.ten_nv && log.ten_nv.toLowerCase().includes(search));
+            return matchDate && matchXuong && matchStatus && matchSearch;
+        });
+
+        const totalPages = Math.ceil(currentFilteredLogs.length / rowsLog) || 1;
+        if (pageLog > totalPages) pageLog = totalPages;
+        document.getElementById('currentLogPage').innerText = pageLog;
+        document.getElementById('totalLogPages').innerText = totalPages;
+        document.getElementById('prevLogBtn').disabled = pageLog === 1;
+        document.getElementById('nextLogPage').disabled = pageLog === totalPages;
+        const start = (pageLog - 1) * rowsLog;
+        const paginatedLogs = currentFilteredLogs.slice(start, start + rowsLog);
+
+        const isAdmin = globalData.role === 'ADMIN';
+        document.getElementById('logs-table').innerHTML = paginatedLogs.map(log => {
+            const locInfo = globalData.locations.find(l => l.ma_tb === log.ma_tb) || { xuong: '?' };
+            const isErr = log.ngoai_quan === 'LỖI' || log.ap_suat === 'LỖI' || log.han_sd === 'HẾT HẠN';
+            const stUI = isErr ? `<span class="badge badge-err">LỖI</span>` : `<span class="badge badge-ok">ĐẠT</span>`;
+            const logStr = encodeURIComponent(JSON.stringify(log));
+            return `<tr>
+          <td><input type="checkbox" class="log-select" value="${logStr}"></td>
+          <td style="font-size:13px;">${new Date(log.thoi_gian).toLocaleString('vi-VN')}</td>
+          <td>${locInfo.xuong}</td><td><b>${log.ma_tb}</b></td><td>${log.ten_nv}</td>
+          <td>${stUI}</td><td style="color:#dc2626; font-size:13px; max-width:150px; overflow:hidden;">${log.ghi_chu || ''}</td>
+          <td>${log.link_anh ? `<img src="${log.link_anh}" class="img-thumb" onclick="window.open('${log.link_anh}')">` : ''}</td>
+          <td>
+            <button class="btn btn-primary btn-icon" onclick="openEditLog('${logStr}')" title="Sửa"><i data-lucide="edit"></i></button>
+            ${isAdmin ? `<button class="btn btn-danger btn-icon" onclick="deleteLog('${log.thoi_gian}', '${log.ma_tb}')" title="Xóa"><i data-lucide="trash-2"></i></button>` : ''}
+          </td>
+        </tr>`;
+        }).join('');
+        lucide.createIcons();
+    };
+
+    function changeLogPage(dir) { pageLog += dir; renderLogs(); }
+
+    function openEditLog(logStr) {
+        const log = JSON.parse(decodeURIComponent(logStr));
+        document.getElementById('editMaTB').innerText = log.ma_tb;
+        document.getElementById('editTime').innerText = new Date(log.thoi_gian).toLocaleString('vi-VN');
+        document.getElementById('editNguoiKT').innerText = log.ten_nv;
+        document.getElementById('editImage').src = log.link_anh || 'https://via.placeholder.com/400x200?text=Khong+Co+Anh';
+        document.getElementById('editThoiGian').value = log.thoi_gian;
+        document.getElementById('editNq').value = log.ngoai_quan === 'LỖI' ? 'Lỗi' : 'Đạt';
+        document.getElementById('editAs').value = log.ap_suat === 'LỖI' ? 'Lỗi' : 'Đạt';
+        document.getElementById('editHs').value = log.han_sd === 'HẾT HẠN' ? 'Hết hạn' : 'Còn hạn';
+        document.getElementById('editGc').value = log.ghi_chu !== 'undefined' ? log.ghi_chu : '';
+        document.getElementById('editLogModal').style.display = 'flex';
+    }
+
+    async function submitEditLog() {
+        const maNV = JSON.parse(localStorage.getItem('pccc_session')).ma;
+        const ma = document.getElementById('editMaTB').innerText;
+        const tg = document.getElementById('editThoiGian').value;
+        const payload = { action: "editLog", thoiGian: tg, maTB: ma, ngoaiQuan: document.getElementById('editNq').value.toUpperCase(), apSuat: document.getElementById('editAs').value.toUpperCase(), hanSD: document.getElementById('editHs').value.toUpperCase(), ghiChu: document.getElementById('editGc').value, maNV: maNV };
+        document.getElementById('editLogModal').style.display = 'none';
+        showToast('Đang lưu...', 'warning');
+        await fetch(SCRIPT_URL, { method: 'POST', body: JSON.stringify(payload) });
+        const log = globalData.logs.find(l => l.thoi_gian === tg && l.ma_tb === ma);
+        if (log) { log.ngoai_quan = payload.ngoaiQuan; log.ap_suat = payload.apSuat; log.han_sd = payload.hanSD; log.ghi_chu = payload.ghiChu; }
+        renderLogs(); renderDashboard();
+        showToast("Đã cập nhật!", "success");
+    }
+
+    function deleteLog(tg, maTB) {
+        if (globalData.role !== 'ADMIN') return showToast("Quyền hạn không đủ!", "error");
+        showDialog("Xóa Nhật Ký", `Xóa báo cáo của ${maTB}?`, async (res) => {
+            if (res) {
+                const maNV = JSON.parse(localStorage.getItem('pccc_session')).ma;
+                showToast('Đang xóa...', 'warning');
+                await fetch(SCRIPT_URL, { method: 'POST', body: JSON.stringify({ action: "deleteLog", thoiGian: tg, maTB: maTB, maNV: maNV, role: globalData.role }) });
+                globalData.logs = globalData.logs.filter(l => !(l.thoi_gian === tg && l.ma_tb === maTB));
+                renderDashboard(); renderLogs(); showToast('Đã xóa thành công!', 'success');
+            }
+        });
+    }
+
+    // ================= 4. EMAIL & TEMPLATES =================
+    function renderTemplates() {
+        const container = document.getElementById('template-list');
+        container.innerHTML = globalData.templates.map((t, index) => `
+            <div class="template-box">
+                <input type="text" class="form-input t-name" value="${t.name}" style="font-weight:bold; color:var(--primary);">
+                <div style="display:flex; gap:10px;">
+                    <div style="flex:1"><label style="font-size:12px;">Gửi đến (TO):</label><input type="text" class="form-input t-to" value="${t.to}"></div>
+                    <div style="flex:1"><label style="font-size:12px;">Đồng kính gửi (CC):</label><input type="text" class="form-input t-cc" value="${t.cc}"></div>
+                </div>
+                <label style="font-size:12px;">Tiêu đề:</label><input type="text" class="form-input t-sub" value="${t.subject}">
+                <label style="font-size:12px;">Nội dung HTML:</label><textarea class="form-input t-body" rows="4">${t.body}</textarea>
+            </div>
+        `).join('');
+        lucide.createIcons();
+    }
+
+    function addNewTemplate() {
+        const container = document.getElementById('template-list');
+        const div = document.createElement('div'); div.className = 'template-box';
+        div.innerHTML = `<input type="text" class="form-input t-name" value="Mẫu Mới" style="font-weight:bold; color:var(--primary);"><div style="display:flex; gap:10px;"><div style="flex:1"><label style="font-size:12px;">TO:</label><input type="text" class="form-input t-to"></div><div style="flex:1"><label style="font-size:12px;">CC:</label><input type="text" class="form-input t-cc"></div></div><label style="font-size:12px;">Tiêu đề:</label><input type="text" class="form-input t-sub"><label style="font-size:12px;">HTML:</label><textarea class="form-input t-body" rows="4"></textarea>`;
+        container.appendChild(div); lucide.createIcons();
+    }
+
+    async function saveTemplates() {
+        const boxes = document.querySelectorAll('.template-box');
+        const newTemplates = Array.from(boxes).map(box => ({
+            name: box.querySelector('.t-name').value, to: box.querySelector('.t-to').value, cc: box.querySelector('.t-cc').value, subject: box.querySelector('.t-sub').value, body: box.querySelector('.t-body').value
+        }));
+        showToast('Đang lưu...', 'warning');
+        await fetch(SCRIPT_URL, { method: 'POST', body: JSON.stringify({ action: "saveSettings", templates: newTemplates }) });
+        globalData.templates = newTemplates; showToast("Lưu thành công!", "success");
+    }
+
+    function prepSendMail(type) {
+        if (type === 'single' && !document.querySelectorAll('.log-select:checked').length) return showToast("Chọn ít nhất 1 mục!", "warning");
+        if (type === 'mass' && !currentFilteredLogs.length) return showToast("Không có dữ liệu!", "warning");
+        document.getElementById('emailTemplateSelect').innerHTML = globalData.templates.map((t, i) => `<option value="${i}">${t.name}</option>`).join('');
+        document.getElementById('emailType').value = type; loadTemplateToEmailForm();
+        document.getElementById('emailDialog').style.display = 'flex';
+    }
+
+    function loadTemplateToEmailForm() {
+        const idx = document.getElementById('emailTemplateSelect').value;
+        const t = globalData.templates[idx];
+        document.getElementById('emailTo').value = t.to; document.getElementById('emailCc').value = t.cc;
+    }
+
+    async function executeSendEmail() {
+        const idx = document.getElementById('emailTemplateSelect').value;
+        const type = document.getElementById('emailType').value;
+        const t = globalData.templates[idx];
+        document.getElementById('emailDialog').style.display = 'none';
+        showToast('Đang gửi Mail...', 'warning');
+        try {
+            if (type === 'single') {
+                const selected = Array.from(document.querySelectorAll('.log-select:checked')).map(cb => JSON.parse(decodeURIComponent(cb.value)));
+                for (let log of selected) await fetch(SCRIPT_URL, { method: 'POST', body: JSON.stringify({ action: "sendEmails", to: document.getElementById('emailTo').value, cc: document.getElementById('emailCc').value, subject: t.subject, body: t.body, log: log }) });
+            } else {
+                let htmlTable = `<table border="1" cellpadding="8" style="border-collapse:collapse; width:100%;"><tr style="background:#0f172a; color:white;"><th>TB</th><th>NV</th><th>Ngày</th><th>St</th><th>Ghi chú</th></tr>`;
+                currentFilteredLogs.forEach(log => { htmlTable += `<tr><td>${log.ma_tb}</td><td>${log.ten_nv}</td><td>${new Date(log.thoi_gian).toLocaleDateString()}</td><td>${log.ngoai_quan}</td><td>${log.ghi_chu}</td></tr>`; });
+                await fetch(SCRIPT_URL, { method: 'POST', body: JSON.stringify({ action: "sendEmails", to: document.getElementById('emailTo').value, cc: document.getElementById('emailCc').value, subject: t.subject, body: t.body.replace("[BANG_BAO_CAO]", htmlTable + "</table>") }) });
+            }
+            showToast("Gửi Mail thành công!", "success");
+        } catch (e) { showToast("Gửi mail thất bại!", "error"); }
+    }
+</script>
